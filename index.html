@@ -1,0 +1,336 @@
+<!DOCTYPE html>
+<html lang="zh-cn">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>小番茄 · 视频+图片合并版</title>
+    <link rel="icon" href="tb.ico" type="image/x-icon">
+    <link rel="shortcut icon" href="tb.ico" type="image/x-icon">
+    <!-- JSZip & FileSaver (用于图片打包) -->
+    <link rel="stylesheet" href="css/style.css">
+<script src="js/FileSaver.min.js"></script>
+</head>
+<body>
+<div class="tool-card">
+    <!-- 标签页 + 刷新按钮 -->
+    <div class="module-tabs">
+        <span class="refresh-tab-btn" id="refreshCurrentBtn">🔄 刷新当前</span>
+        <div class="tab-container">
+            <div class="module-tab active" id="tabVideoDecode">🎬 视频解密</div>
+            <div class="module-tab" id="tabImageDecode">🖼️ 图片解密</div>
+        </div>
+    </div>
+
+    <!-- 视频解密页面 (完整版 from 1.html) -->
+    <div id="videoPage" class="module-page active-page">
+        <div class="main-decode-area">
+            <div class="video-preview-box">
+                <div class="video-header">
+                    <span style="background:#803f5e; padding:4px 18px; border-radius:40px;">🔓 解密实时预览</span>
+                    <span id="video-dim"></span>
+                    <!-- 水平镜像复选框 (隐藏但强制开启) -->
+                    <label class="mirror-toggle"><input type="checkbox" id="horizontalMirrorVideo" checked> 🪞 水平镜像</label>
+                </div>
+                <div class="video-wrapper" id="canvasFullscreenWrapper">
+                    <canvas id="decodeCanvas"></canvas>
+                </div>
+            </div>
+            <div class="action-strip">
+                <div class="action-btn file-select">
+                    📂 选择视频
+                    <input type="file" accept="video/*" id="videoFileInput">
+                </div>
+                <button class="action-btn primary" id="startDecodeBtn">⚡ 解密执行</button>
+                <button class="action-btn" id="paramBtn">⚙️ 参数设置</button>
+                <div id="actionStatus" style="color: #ffd8c4; font-size: 0.8rem; text-align: center; margin-top: 10px; padding: 10px; background: #231c19; border-radius: 20px; border: 1px solid #4b352d;">当前未导入视频，请选择解密状态</div>
+            </div>
+        </div>
+        <div class="progress-section" style="display: none;">
+            <span style="font-weight:600; color:#ffc5b1;">📊 解密进度</span>
+            <progress id="decodeProgress" value="0" max="100"></progress>
+            <span id="status-text">⏸️ 等待视频选择</span>
+        </div>
+    </div>
+
+    <!-- 图片解密页面 (完整版 from 2.html) -->
+    <div id="imagePage" class="module-page">
+        <div class="image-header-actions">
+            <div class="file-browse-row">
+                <button class="img-action-btn" id="browseImages">📂 浏览文件</button>
+                <button class="img-action-btn" id="exportConfigImg">📁 导出至文件夹</button>
+                <button class="img-action-btn primary" id="downloadAllBtn">📥 下载所有</button>
+            </div>
+            <div>
+                <label class="mirror-toggle"><input type="checkbox" id="horizontalMirrorImage" checked> 🪞 水平镜像</label>
+                <button class="img-action-btn primary" id="startEncryptImg">🔒 开始加密</button>
+                <button class="img-action-btn primary" id="startDecryptImg">🔓 开始解密</button>
+                <button class="img-action-btn" id="viewPreviewBtn">🔍 查看预览图</button>
+            </div>
+        </div>
+
+        <!-- 还原按钮行 -->
+        <div class="reset-row">
+            <button class="img-action-btn small" id="resetToOriginalBtn">↺ 还原原图</button>
+            <div style="display: flex; align-items: center; gap: 12px; position: relative;">
+                <button class="img-action-btn small disabled" id="reencryptToggleBtn">🚫 禁止重加密</button>
+                <span id="encryptCounter" style="color: #ffdac9; font-size: 1.6rem; font-weight: 600; position: absolute; left: 100%; top: 50%; transform: translateY(-50%); margin-left: 12px;">0</span>
+            </div>
+        </div>
+
+        <!-- 处理报告行 + 进度条 + 图片计数 -->
+        <div class="progress-section" style="margin-top:20px;">
+            <progress id="imageProgress" value="0" max="100"></progress>
+            <input type="text" readonly id="selectedCountDisplay" class="key-value" style="width:auto; max-width:160px; margin-left:auto; background:#2f2723; cursor:default;" value="0 张图片">
+        </div>
+
+        <!-- 导出设置区 -->
+        <div class="compact-settings-container">
+            <div class="export-format-wrapper">
+                <span style="font-weight:600; color:white;">📸 导出设置：</span>
+                <select id="imgFormat">
+                <option value="jpg95" selected>JPG (95% 质量)</option>
+                <option value="png">PNG (无损)</option>
+                <option value="webp">WEBP (无损)</option>
+            </select>
+            </div>
+            <div class="export-checkboxes-wrapper">
+                <label><input type="checkbox" id="packDownload"> 打包下载文件</label>
+                <label><input type="checkbox" id="exportKeyFileCheckbox"> 导出密钥文件（TXT）</label>
+            </div>
+
+            <!-- 加密方式栏 -->
+            <div class="method-info" id="methodInfoClickable">
+                <span class="label">🔒 加密方式：</span>
+                <span class="method-badge" id="currentMethodDisplay">吉尔伯特曲线</span>
+            </div>
+
+            <!-- 密钥区域 -->
+            <div class="key-input-wrapper">
+                <span class="key-label">🔑 密钥：</span>
+                <input type="text" id="keyInputImg" class="key-value" placeholder="可为空" value="">
+            </div>
+
+            <!-- XOR 二次加密开关 -->
+            <div class="xor-toggle-wrapper">
+                <span class="xor-toggle-label">🔐 色彩反转：</span>
+                <label class="xor-toggle-switch">
+                    <input type="checkbox" id="xorToggle">
+                    <span class="xor-toggle-slider"></span>
+                </label>
+            </div>
+            <div class="large-image-warning-wrapper">
+                <span class="large-image-warning-label">导入大图提醒：</span>
+                <label class="xor-toggle-switch">
+                    <input type="checkbox" id="largeImageWarningToggle">
+                    <span class="xor-toggle-slider"></span>
+                </label>
+                <button type="button" class="large-image-warning-help" id="largeImageWarningHelp" aria-label="查看大图提醒说明">?</button>
+            </div>
+            <button type="button" class="speed-status-pill pending" id="imageSpeedStatus" aria-label="查看图片处理速度状态">
+                <span class="speed-status-dot"></span>
+                <span id="imageSpeedStatusText">高速处理待命</span>
+            </button>
+            <div id="imageCompatNote" class="image-compat-note" aria-live="polite"></div>
+        </div>
+    </div>
+
+    <!-- 视频页面免责声明 -->
+    <div class="disclaimer">
+        <h5>网站免责声明</h5>
+        <p><strong>一般信息</strong> 本网站上的所有内容（包括但不限于文字、图形、图像、照片、视频、音频、链接及其他材料）仅供参考。我们尽力确保信息的准确性和时效性，但不作任何明示或暗示的保证。</p>
+        <p><strong>不构成专业建议</strong> 本网站内容不构成任何形式的专业建议（包括但不限于法律、财务、医疗或技术建议）。在采取任何基于本网站信息的行动前，请咨询相关领域的专业人士。</p>
+        <p><strong>外部链接免责</strong> 本网站可能包含指向第三方网站的超链接。这些链接仅为方便用户提供，不代表我们对其内容的认可。我们对任何链接网站的内容、隐私政策或实践不承担任何责任。</p>
+        <p><strong>责任限制</strong> 在法律允许的最大范围内，我们不对因使用或无法使用本网站及其内容而造成的任何直接、间接、偶然、特殊或后果性损失承担责任，即使我们已被告知可能发生此类损失。</p>
+        <p><strong>“按原样”提供</strong> 本网站及其所有内容均按“原样”和“可用性”提供，不附带任何形式的保证。我们保留随时修改、暂停或终止网站任何部分的权利，恕不另行通知。</p>
+        <p><strong>知识产权</strong> 除非另有说明，本网站上的所有内容（包括但不限于商标、徽标、设计、文本和图像）均为我们或我们的许可方的财产，受版权和其他知识产权法保护。未经明确书面许可，不得复制、分发或用于商业目的。</p>
+        <p><strong>用户行为</strong> 用户在使用本网站时，不得从事任何可能损害、瘫痪或干扰网站正常运行的行为，也不得尝试未经授权访问网站的受限部分或系统。</p>
+        <p><strong>个人责任</strong> 您同意自行承担使用本网站及其内容的风险。您对依赖本网站信息所做的任何决定和行动负全部责任。</p>
+        <p><strong>条款变更</strong> 我们保留随时更新、修改或替换本免责声明任何部分的权利。变更后的声明将在本页面公布，并注明最后更新日期。您有责任定期查看本页面以了解最新条款。</p>
+        <p><strong>适用法律</strong> 本免责声明受中国法律管辖并依其解释，不适用其法律冲突原则。</p>
+        <p style="margin-top:16px; color:#bda69a; font-size:0.8rem; border-top:1px dashed #5c4238; padding-top:10px;">本网站由AI编写</p>
+    </div>
+    <div class="footer"></div>
+
+    <!-- 下载工具按钮区域 -->
+    <div class="download-tool-section">
+        <button class="download-tool-btn" id="downloadToolBtn">
+            📥 下载视频加密工具（电脑版）
+        </button>
+    </div>
+    
+    <!-- 视频解密失败说明按钮 (仅移动端显示) -->
+    <div class="decrypt-fail-section">
+        <button class="action-btn" id="decryptFailBtn">
+            ❓ 我为什么视频解密失败
+        </button>
+    </div>
+</div>
+
+<!-- 视频解密失败说明弹窗 -->
+<div id="decryptFailModal" class="download-modal-overlay">
+    <div class="download-modal">
+        <button class="modal-close-btn" id="closeDecryptFailModalBtn">&times;</button>
+        <h3>🔍 视频解密失败原因</h3>
+        <p style="font-size: 1.1rem; line-height: 1.6; margin-bottom: 24px; text-align: center;">
+            视频解密失败可能是浏览器兼容问题，建议更换浏览器后重试
+        </p>
+        <div class="download-buttons">
+            <a href="https://viayoo.com/zh-cn/" target="_blank" class="download-button baidu">
+                🔗 Via 浏览器下载
+            </a>
+        </div>
+        <button class="close-download-modal" id="closeDecryptFailModalBtnBottom">关闭</button>
+    </div>
+</div>
+
+<!-- 下载弹窗 -->
+<div id="downloadModal" class="download-modal-overlay">
+    <div class="download-modal">
+        <button class="modal-close-btn" id="closeDownloadModalBtn">&times;</button>
+        <h3>📥 选择下载方式</h3>
+        <div class="download-buttons">
+            <a href="https://pan.baidu.com/s/1W_bvDtUPyDOgAvuMwJ5W4g?pwd=abwu" target="_blank" class="download-button baidu">
+                🔗 百度网盘下载
+            </a>
+            <a href="https://www.123865.com/s/QL9VVv-q9AZh" target="_blank" class="download-button cloud123">
+                🔗 123 云盘下载
+            </a>
+            <a href="https://pan.quark.cn/s/6c00997f3996" target="_blank" class="download-button quark">
+                🔗 夸克云盘下载
+            </a>
+        </div>
+        <button class="close-download-modal" id="closeDownloadModalBtnBottom">关闭</button>
+    </div>
+</div>
+
+<!-- 共用隐藏视频元素 -->
+<video id="hidden-video" crossorigin="anonymous" preload="auto" playsinline></video>
+
+<!-- 视频解密参数弹窗 (来自1.html) -->
+<div id="paramModal" class="modal-overlay">
+    <div class="param-window">
+        <h3>🔧 视频解密参数</h3>
+        <div class="param-row">
+            <label>解密方式</label>
+            <div class="radio-group" id="decModeRadioGroup">
+                <label><input type="radio" name="decMode" value="gilbert" checked> 吉尔伯特曲线</label>
+                <label><input type="radio" name="decMode" value="block"> 块打乱</label>
+            </div>
+        </div>
+        <div class="param-row">
+            <label>密钥 (可选)</label>
+            <input type="text" id="keyInput" placeholder="留空表示无密钥" value="">
+        </div>
+        <div class="param-row" id="blockWidthRow">
+            <label>块宽度 (像素, 仅块打乱)</label>
+            <input type="number" id="blockWidth" value="16" min="8" max="256" step="8">
+        </div>
+        <div class="param-row" id="blockHeightRow">
+            <label>块高度 (像素)</label>
+            <input type="number" id="blockHeight" value="16" min="8" max="256" step="8">
+        </div>
+        <!-- 旋转180°复选框：默认勾选且隐藏 -->
+        <div class="checkbox-row" id="rotateCheckboxRow" style="display: none;">
+            <label><input type="checkbox" id="rotateCheckbox" checked> 🔄 输出旋转180° (固定开启)</label>
+        </div>
+        <button class="btn-close" id="closeParamBtn">保存并关闭</button>
+    </div>
+</div>
+
+<!-- 图片加密方式选择弹窗 (来自2.html) -->
+<div id="encryptMethodModal" class="modal-overlay">
+    <div class="param-window encrypt-method-window">
+        <h3>选择加密方式</h3>
+        <div class="param-row">
+            <div class="radio-group" id="imgEncryptModeGroup">
+                <label><input type="radio" name="imgEncryptMode" value="gilbert" checked><span>吉尔伯特曲线</span></label>
+                <label><input type="radio" name="imgEncryptMode" value="block"><span>分块打乱</span></label>
+                <label><input type="radio" name="imgEncryptMode" value="fastest"><span>最快混淆</span></label>
+            </div>
+        </div>
+        <div id="imgBlockParams" style="display: none;">
+            <div class="param-row">
+                <label>块宽度 (像素)</label>
+                <select id="imgBlockWidthSelect"></select>
+            </div>
+            <div class="param-row">
+                <label>块高度 (像素)</label>
+                <select id="imgBlockHeightSelect"></select>
+            </div>
+            <div style="display: flex; justify-content: flex-end; margin-bottom: 16px;">
+                <button class="img-action-btn small" id="standardizeBtn" disabled>📐 标准化 (高度=宽度)</button>
+            </div>
+            <div id="blockHint" style="color: #ffa07a; font-size:0.9rem; padding:0 10px;"></div>
+        </div>
+        <button class="btn-close" id="saveEncryptMethodBtn">保存并关闭</button>
+    </div>
+</div>
+
+<!-- 批量处理弹窗 -->
+<div id="batchProcessModal" class="modal-overlay">
+    <div class="param-window" style="width:400px;">
+        <h3>🔄 批量处理</h3>
+        <div class="param-row">
+            <label>操作类型</label>
+            <div class="radio-group">
+                <label><input type="radio" name="batchMode" value="encrypt" checked> 加密</label>
+                <label><input type="radio" name="batchMode" value="decrypt"> 解密</label>
+            </div>
+        </div>
+        <div class="param-row">
+            <label>执行次数</label>
+            <input type="number" id="batchCount" value="10" min="1" max="100" style="width:100%;">
+        </div>
+        <div class="param-row">
+            <label>输出格式</label>
+            <select id="batchFormat" style="width:100%;">
+                <option value="jpg95">JPG</option>
+                <option value="png">PNG</option>
+                <option value="webp">WebP</option>
+            </select>
+        </div>
+        <button class="btn-close" id="executeBatchBtn">执行并关闭</button>
+    </div>
+</div>
+
+<!-- 图片预览弹窗 (来自2.html) -->
+<div id="previewModal" class="modal-overlay" style="display: none;">
+    <div class="param-window">
+        <div class="preview-container">
+            <div class="preview-img-wrapper">
+                <img id="previewImg" src="" alt="预览图">
+            </div>
+            <div class="preview-nav">
+                <span id="prevPreviewBtn">←</span>
+                <span class="preview-counter" id="previewCounter"></span>
+                <span id="nextPreviewBtn">→</span>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- 隐藏的图片文件选择器 -->
+<input type="file" id="imageFilePicker" multiple accept="image/*" style="display: none;">
+
+<!-- 自定义弹窗 -->
+<div id="customAlert" class="custom-alert-overlay" style="display: none;">
+    <div class="custom-alert">
+        <div class="custom-alert-content">
+            <div class="custom-alert-message" id="customAlertMessage"></div>
+            <div class="custom-alert-buttons">
+                <button class="custom-alert-btn" id="customAlertBtn">确认</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script src="js/fastest-obfuscation.js?v=20260520-1831"></script>
+<script src="js/app.js?v=20260520-1831"></script>
+</body>
+
+</html>
+
+
+
+
+
