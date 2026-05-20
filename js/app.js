@@ -802,10 +802,47 @@
             webpTranscodeSupported: null
         };
         const IMAGE_CIPHER_WASM_URL = new URL('../wasm/hilbert_image_cipher_wasm.js', document.currentScript && document.currentScript.src ? document.currentScript.src : window.location.href).href;
+        const IMAGE_CIPHER_WASM_BINARY_URL = new URL('../wasm/hilbert_image_cipher_wasm_bg.wasm', document.currentScript && document.currentScript.src ? document.currentScript.src : window.location.href).href;
         const IMAGE_CIPHER_WORKER_URL = new URL('image-wasm-worker.js', document.currentScript && document.currentScript.src ? document.currentScript.src : window.location.href).href;
         const JSZIP_URL = new URL('jszip.min.js', document.currentScript && document.currentScript.src ? document.currentScript.src : window.location.href).href;
+        const WASM_LOCALSTORAGE_KEY = '_wasm_binary_v1';
         let imageCipherWasmPromise = null;
         let imageCipherWasmAvailable = true;
+        let cachedWasmResponsePromise = null;
+
+        // 获取 WASM 二进制：优先从 localStorage 加载，其次网络获取后缓存
+        function getWasmBinaryResponse() {
+            if (cachedWasmResponsePromise) return cachedWasmResponsePromise;
+            cachedWasmResponsePromise = (async () => {
+                // 尝试 localStorage
+                try {
+                    const stored = localStorage.getItem(WASM_LOCALSTORAGE_KEY);
+                    if (stored) {
+                        const binary = atob(stored);
+                        const bytes = new Uint8Array(binary.length);
+                        for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+                        return new Response(bytes, { headers: { 'Content-Type': 'application/wasm' } });
+                    }
+                } catch (e) {}
+
+                // 网络获取并缓存到 localStorage
+                try {
+                    const response = await fetch(IMAGE_CIPHER_WASM_BINARY_URL, { cache: 'force-cache' });
+                    if (response.ok) {
+                        const blob = await response.clone().blob();
+                        const buffer = await blob.arrayBuffer();
+                        const bytes = new Uint8Array(buffer);
+                        let binary = '';
+                        for (let i = 0; i < bytes.length; i++) binary += String.fromCharCode(bytes[i]);
+                        localStorage.setItem(WASM_LOCALSTORAGE_KEY, btoa(binary));
+                    }
+                    return response;
+                } catch (e) {
+                    return fetch(IMAGE_CIPHER_WASM_BINARY_URL);
+                }
+            })();
+            return cachedWasmResponsePromise;
+        }
         let imageCipherWorkerAvailable = typeof Worker === 'function';
         let imageCipherWorker = null;
         let imageCipherWorkerJobId = 0;
@@ -904,18 +941,19 @@
                 return null;
             }
             if (!imageCipherWasmPromise) {
-                imageCipherWasmPromise = import(IMAGE_CIPHER_WASM_URL)
-                    .then(async (module) => {
-                        await module.default();
-                        startImageCipherSuccessEffects();
-                        return module;
-                    })
-                    .catch((error) => {
-                        imageCipherWasmAvailable = false;
-                        return null;
-                    });
-            } else {
-                }
+                imageCipherWasmPromise = (async () => {
+                    const [module, wasmResponse] = await Promise.all([
+                        import(IMAGE_CIPHER_WASM_URL),
+                        getWasmBinaryResponse()
+                    ]);
+                    await module.default(wasmResponse);
+                    startImageCipherSuccessEffects();
+                    return module;
+                })().catch((error) => {
+                    imageCipherWasmAvailable = false;
+                    return null;
+                });
+            }
             return imageCipherWasmPromise;
         }
 
