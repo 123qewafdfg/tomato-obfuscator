@@ -3221,6 +3221,12 @@
 
         previewImg.addEventListener('click', function(e) { e.stopPropagation(); if (document.fullscreenElement) document.exitFullscreen(); else this.requestFullscreen(); });
         window.saveAs = window.saveAs || function(blob, name) { const link = document.createElement('a'); link.href = URL.createObjectURL(blob); link.download = name; link.click(); URL.revokeObjectURL(link.href); };
+
+        // 预加载 WASM，避免首次使用时卡顿
+        window.setTimeout(() => {
+            getImageCipherWorker();
+            initImageCipherWasm();
+        }, 500);
     })();
 
     // ==================== 标签页切换 & 刷新 (独立) ====================
